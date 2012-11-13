@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<script type="text/javascript" src="js/jquery-1.8.2.min.js"></script>
+    <script type="text/javascript" src="js/sidebar.js"></script>
+    <link href="http://fonts.googleapis.com/css?family=Inconsolata" rel="stylesheet" type="text/css">
+    <link href="css/sidebar.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+	<form>
+		<div class="choice"><a href="#" id="authored">User Authored Styles</a><i class="warn" title="Does not capture inherited styles"></i></div>
+		<textarea></textarea>
+
+		<div class="choice"><a href="#" id="authored_trim_selectors">User Authored Styles (matching selectors only)</a><i class="warn" title="Does not capture inherited styles"></i></div>
+		<textarea></textarea>
+
+		<div class="choice"><a href="#" id="authored_top">User Authored Styles (top element only)</a><i class="warn" title="Does not capture inherited styles"></i></div>
+		<textarea></textarea>
+
+		<div class="choice"><a href="#" id="authored_top_trim_selectors">User Authored Styles (top element only, matching selectors only)</a><i class="warn" title="Does not capture inherited styles"></i></div>
+		<textarea></textarea>
+
+		<div class="choice"><a href="#" id="computed">Computed Styles</a><i class="warn" title="Quite imperfect, for now"></i></div>
+		<textarea></textarea>
+
+		<div class="choice"><a href="#" id="complete">All Styles</a><i class="warn" title="Slow and imperfect"></i></div>
+		<textarea></textarea>
+	</form>
+</body>
+</html>

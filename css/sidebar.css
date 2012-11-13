@@ -1,0 +1,51 @@
+* {
+    font: 13px Inconsolata, sans-serif;
+    -webkit-box-sizing: border-box;
+    -webkit-user-select: none;
+}
+BODY {
+    margin: 0;
+    padding: 1px 7px;
+}
+FORM {
+    margin: 0;
+    padding: 0;
+}
+.choice A {
+    color: #000;
+    cursor: default;
+    line-height: 19px;
+    text-decoration: none;
+}
+.choice A::before {
+    content: url('../img/treeRightTriangleBlack.png');
+    float: left;
+    height: 8px;
+    opacity: 0.75;
+    padding-right: 3px;
+    width: 8px;
+}
+.choice A.open::before {
+    content: url('../img/treeDownTriangleBlack.png');
+}
+I.warn {
+    content: url('../img/warning_inactive.png');
+    display: inline-block;
+    font-style: normal;
+    height: 10px;
+    margin: 1px 0 0 5px;
+    width: 10px;
+}
+.choice:hover I.warn {
+    content: url('../img/warning.png');
+}
+TEXTAREA {
+    background-color: #F6F6F6;
+    border: 1px solid #DDD;
+    display: none;
+    font-size: 11px;
+    height: 100px;
+    overflow: scroll-y;
+    width: 100%;
+    -webkit-user-select: auto;
+}
