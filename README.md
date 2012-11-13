@@ -8,8 +8,9 @@ Chrome/Chromium extension that allows you to capture CSS and HTML of an element 
 Usage
 -----
 
-You may install this extension from its google chrome webstore page [soon]
+You may install this extension from its google chrome webstore page
 
+https://chrome.google.com/webstore/detail/css%20html/pbgafccggboemhmcmnmglkgidbiigoeh?hl=en
 
 or download it and manually load as an 'Unpacked extension' via chrome extensions page.
 
