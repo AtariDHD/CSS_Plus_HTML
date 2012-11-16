@@ -27,7 +27,9 @@ function injectRestrictedCSS() {
 			$.get(YQLURL(xorSheets[x]), function(xmlDoc) { // make async ajax call to get stylesheet using Yahoo's YQL service to deal with cross-origin security restriction 
 				if (xmlDoc) {
 					try {
-						$('#xorcss').append($('<style type="text/css" />').html(xmlDoc.getElementsByTagName('p')[0].childNodes[0].nodeValue)); // extract results of YQL query and insert into a new stylesheet
+						var xorid = 'xor_' + getUniqueTime();
+						$('#xorcss').append($('<style type="text/css" id="' + xorid + '" />').html(xmlDoc.getElementsByTagName('p')[0].childNodes[0].nodeValue)); // extract results of YQL query and insert into a new stylesheet
+						$('#' + xorid)[0].disabled = true; // disable stylesheet so that we don't affect page rendering
 					}
 					catch(err) {
 						console.log('error injecting');
@@ -36,6 +38,12 @@ function injectRestrictedCSS() {
 			});
 		}
 	}
+}
+
+function getUniqueTime() {
+	var time = new Date().getTime();
+	while (time == new Date().getTime());
+	return new Date().getTime();
 }
 
 function setupXorSheetsContainer() {

@@ -11,11 +11,28 @@ window.onload = function() {
     	return false;
     });
 
+    $('A.new-win').click(function () {
+    	return demoFragment($(this).prev(), $(this).parent().prev().text());
+    });
+
+    function demoFragment($ta, demoTitle) {
+    	var newWin = window.open('', 'csshtml_demo_' + getUniqueTime());
+		newWin.document.writeln('<html><head><title>CSS+HTML Fragment - ' + demoTitle + '</title></head><body>' + $ta.val() + '</body></html>');
+		newWin.document.close();
+    	return false;
+    }
+
+	function getUniqueTime() {
+		var time = new Date().getTime();
+		while (time == new Date().getTime());
+		return new Date().getTime();
+	}
+
     function closeAllSections() {
 		$('.choice A.open').each(function () {
-	    	var $ta = $(this).parent().next();
+	    	var $ta = $(this).parent().next().find('TEXTAREA');
 	    	$ta.val('');
-	    	$ta.hide(100, function () { $(this).prev().find('A').removeClass('open'); });
+	    	$ta.parent().hide(100, function () { $(this).prev().find('A').removeClass('open'); });
 		});
     }
 
@@ -27,7 +44,7 @@ window.onload = function() {
 
     function elementSelected() {
 		$('.choice A.open').each(function () {
-	    	var $ta = $(this).parent().next();
+	    	var $ta = $(this).parent().next().find('TEXTAREA');
 	    	$ta.val('inspecting...');
 	    	switch ($(this).attr('id'))
 			{
@@ -59,9 +76,6 @@ window.onload = function() {
     }
 
     chrome.devtools.panels.elements.onSelectionChanged.addListener(elementSelected);
-
-
-//	alert('hiho');
 }
 
 
@@ -314,10 +328,6 @@ function inspect_computed(el) {
         return;
     
 	var doc = el.ownerDocument,
-		$ = doc.defaultView.$,
-		$el = $(el),
-		html = $el[0].outerHTML,
-		rulesUsed = [],
 		sheets = doc.styleSheets;
 
     // Mapping between tag names and css default values lookup tables. This allows to exclude default values in the result.
@@ -331,8 +341,12 @@ function inspect_computed(el) {
     var tagNames = ["A","ABBR","ADDRESS","AREA","ARTICLE","ASIDE","AUDIO","B","BASE","BDI","BDO","BLOCKQUOTE","BODY","BR","BUTTON","CANVAS","CAPTION","CENTER","CITE","CODE","COL","COLGROUP","COMMAND","DATALIST","DD","DEL","DETAILS","DFN","DIV","DL","DT","EM","EMBED","FIELDSET","FIGCAPTION","FIGURE","FONT","FOOTER","FORM","H1","H2","H3","H4","H5","H6","HEAD","HEADER","HGROUP","HR","HTML","I","IFRAME","IMG","INPUT","INS","KBD","KEYGEN","LABEL","LEGEND","LI","LINK","MAP","MARK","MATH","MENU","META","METER","NAV","NOBR","NOSCRIPT","OBJECT","OL","OPTION","OPTGROUP","OUTPUT","P","PARAM","PRE","PROGRESS","Q","RP","RT","RUBY","S","SAMP","SCRIPT","SECTION","SELECT","SMALL","SOURCE","SPAN","STRONG","STYLE","SUB","SUMMARY","SUP","SVG","TABLE","TBODY","TD","TEXTAREA","TFOOT","TH","THEAD","TIME","TITLE","TR","TRACK","U","UL","VAR","VIDEO","WBR"];
 
 	// turn stylesheets off momentarily so that we can capture the default browser/user agent styles for each tag
+	var sheetsToReenable = [];
 	for (var s in sheets) {
-		sheets[s].disabled = true;
+		if (!sheets[s].disabled) {
+			sheetsToReenable.push(sheets[s]);
+			sheets[s].disabled = true;
+		}
 	}
 
     // Precompute the lookup tables.
@@ -342,8 +356,8 @@ function inspect_computed(el) {
     }
 
 	// turn stylesheets back on
-	for (var s in sheets) {
-		sheets[s].disabled = false;
+	for (var s in sheetsToReenable) {
+		sheetsToReenable[s].disabled = false;
 	}
 
     return serializeIt();
@@ -409,59 +423,11 @@ function inspect_computed(el) {
 function inspect_complete(el) {
     if (el === undefined)
         return;
-    
-	var doc = el.ownerDocument,
-		$ = doc.defaultView.$,
-		$el = $(el),
-		html = $el[0].outerHTML,
-		rulesUsed = [],
-		sheets = doc.styleSheets;
-
-    // Mapping between tag names and css default values lookup tables. This allows to exclude default values in the result.
-    var defaultStylesByTagName = {};
 
     // Styles inherited from style sheets will not be rendered for elements with these tag names
     var noStyleTags = {"BASE":true,"HEAD":true,"HTML":true,"META":true,"NOFRAME":true,"NOSCRIPT":true,"PARAM":true,"SCRIPT":true,"STYLE":true,"TITLE":true};
 
-    // This list determines which css default values lookup tables are precomputed at load time
-    // Lookup tables for other tag names will be automatically built at runtime if needed
-    var tagNames = ["A","ABBR","ADDRESS","AREA","ARTICLE","ASIDE","AUDIO","B","BASE","BDI","BDO","BLOCKQUOTE","BODY","BR","BUTTON","CANVAS","CAPTION","CENTER","CITE","CODE","COL","COLGROUP","COMMAND","DATALIST","DD","DEL","DETAILS","DFN","DIV","DL","DT","EM","EMBED","FIELDSET","FIGCAPTION","FIGURE","FONT","FOOTER","FORM","H1","H2","H3","H4","H5","H6","HEAD","HEADER","HGROUP","HR","HTML","I","IFRAME","IMG","INPUT","INS","KBD","KEYGEN","LABEL","LEGEND","LI","LINK","MAP","MARK","MATH","MENU","META","METER","NAV","NOBR","NOSCRIPT","OBJECT","OL","OPTION","OPTGROUP","OUTPUT","P","PARAM","PRE","PROGRESS","Q","RP","RT","RUBY","S","SAMP","SCRIPT","SECTION","SELECT","SMALL","SOURCE","SPAN","STRONG","STYLE","SUB","SUMMARY","SUP","SVG","TABLE","TBODY","TD","TEXTAREA","TFOOT","TH","THEAD","TIME","TITLE","TR","TRACK","U","UL","VAR","VIDEO","WBR"];
-
-	// turn stylesheets off momentarily so that we can capture the default browser/user agent styles for each tag
-	for (var s in sheets) {
-		sheets[s].disabled = true;
-	}
-
-    // Precompute the lookup tables.
-    for (var i = 0; i < tagNames.length; i++) {
-        if(!noStyleTags[tagNames[i]])
-            defaultStylesByTagName[tagNames[i]] = computeDefaultStyleByTagName(tagNames[i]);
-    }
-
-	// turn stylesheets back on
-	for (var s in sheets) {
-		sheets[s].disabled = false;
-	}
-
     return serializeIt();
-
-    function computeDefaultStyleByTagName(tagName) {
-        var defaultStyle = {};
-        var element = doc.body.appendChild(doc.createElement(tagName));
-        var computedStyle = getComputedStyle(element);
-        for (var i = 0; i < computedStyle.length; i++) {
-            defaultStyle[computedStyle[i]] = computedStyle[computedStyle[i]];
-        }
-        doc.body.removeChild(element);
-        return defaultStyle;
-    }
-
-    function getDefaultStyleByTagName(tagName) {
-        tagName = tagName.toUpperCase();
-        if (!defaultStylesByTagName[tagName])
-            defaultStylesByTagName[tagName] = computeDefaultStyleByTagName(tagName);
-        return defaultStylesByTagName[tagName];
-    }
 
     function serializeIt() {
         if (el.nodeType !== Node.ELEMENT_NODE) { throw new TypeError(); }
@@ -472,7 +438,6 @@ function inspect_complete(el) {
             var e = elements[i];
             if (!noStyleTags[e.tagName]) {
                 var computedStyle = getComputedStyle(e);
-                var defaultStyle = getDefaultStyleByTagName(e.tagName);
                 cssTexts[i] = e.style.cssText;
                 for (var ii = 0; ii < computedStyle.length; ii++) {
                     var cssPropName = computedStyle[ii];
@@ -484,7 +449,6 @@ function inspect_complete(el) {
 		var elCssText = el.style.cssText;
 		if (!noStyleTags[el.tagName]) {
 			 var computedStyle = getComputedStyle(el);
-			 var defaultStyle = getDefaultStyleByTagName(el.tagName);
 			 for (var ii = 0; ii < computedStyle.length; ii++) {
 				  var cssPropName = computedStyle[ii];
 						el.style[cssPropName] = computedStyle[cssPropName];
