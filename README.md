@@ -1,7 +1,7 @@
 CSS+HTML
 ======================
 
-Chrome/Chromium extension that allows you to capture the user-authored CSS or computed styles of the current inspected element along with the markup for the element and its children.
+Chrome/Chromium extension that allows you to capture the page author or computed styles of the current inspected element along with the markup for the element and its children.
 
 ![Screenshot](https://github.com/ifugu/CSS_Plus_HTML/blob/master/img/screenshot.png?raw=true)
 
