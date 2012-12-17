@@ -3,7 +3,7 @@ $(function() {
 		"if (typeof jQuery === 'undefined') {\n" +
 		"    var jqscript = document.createElement('script');\n" +
 		"    jqscript.type = 'text/javascript';\n" +
-		"    jqscript.src = '//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js';\n" +
+		"    jqscript.src = 'http' + (/^https/.test(location.protocol) ? 's' : '') + '://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js';\n" +
 		"    var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;\n" +
 		"    head.insertBefore(jqscript, head.firstChild);\n" +
 		"}\n";
