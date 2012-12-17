@@ -46,72 +46,287 @@ window.onload = function() {
 		$('.choice A.open').each(function () {
 	    	var $ta = $(this).parent().next().find('TEXTAREA');
 	    	$ta.val('inspecting...');
-	    	switch ($(this).attr('id'))
-			{
-				case 'authored':
-			    	outputElementProperties(inspect_authored.toString(), $ta);
-					break;
-				case 'authored_trim_selectors':
-			    	outputElementProperties(inspect_authored_trim_selectors.toString(), $ta);
-					break;
-				case 'authored_top':
-			    	outputElementProperties(inspect_authored_top.toString(), $ta);
-					break;
-				case 'authored_top_trim_selectors':
-			    	outputElementProperties(inspect_authored_top_trim_selectors.toString(), $ta);
-					break;
-				case 'computed':
-			    	outputElementProperties(inspect_computed.toString(), $ta);
-					break;
-				case 'complete':
-			    	outputElementProperties(inspect_complete.toString(), $ta);
-			}
+
+			chrome.devtools.inspectedWindow.eval('(' + inspect.toString() + ')($0, "' + $(this).attr('id') + '")', function (result) {
+				$ta.val(result ? style_html(result, { max_char: 0 }) : 'result was null').select().focus();
+			});
 		});
 	}
 
-    function outputElementProperties(inspector, target) {
-        chrome.devtools.inspectedWindow.eval("(" + inspector + ")($0)", function (result) {
-			target.val(result ? style_html(result, {max_char: 0}) : 'result was null').select().focus();
-        });
-    }
-
-    chrome.devtools.panels.elements.onSelectionChanged.addListener(elementSelected);
+	chrome.devtools.panels.elements.onSelectionChanged.addListener(elementSelected);
 }
 
+function inspect(el, func) {
+	if (el === undefined || el.nodeType !== Node.ELEMENT_NODE)
+		return;
 
-function inspect_authored(el) {
-    if (el === undefined)
-        return;
-    
 	var doc = el.ownerDocument,
-		$ = doc.defaultView.$,
-		$el = $(el),
-		html = $el[0].outerHTML,
-		rulesUsed = [],
-		sheets = doc.styleSheets;
+		 $ = doc.defaultView.$,
+		 $el = $(el),
+		 html = $el[0].outerHTML,
+		 rulesUsed = [],
+		 sheets = [],
+		 docSheets = doc.styleSheets,
+		 xorSheets = $('#cph_xorcss')[0].contentDocument.styleSheets;
 
-	for (var s in sheets) {
-		var rules = sheets[s].rules || sheets[s].cssRules;
-		if (rules && !isPrintOnlyStylesheet(sheets[s].media)) {
-			for (var r in rules) {
-				try {
-					if (rules[r].selectorText)
-						findFirstMatch($el, rules[r]);
-//						if (rules[r].selectorText && $el.is(rules[r].selectorText))
-//							rulesUsed.push(rules[r]);
+	for (var s in docSheets) {
+		var thisSheet = docSheets[s];
+		if (thisSheet.cssRules && !isPrintOnlyStylesheet(thisSheet.media))
+			sheets.push([thisSheet, thisSheet.ownerNode.getAttribute('cph-ssorder')]);
+	}
+	for (var s in xorSheets) {
+		var thisSheet = xorSheets[s];
+		if (thisSheet.cssRules)
+			sheets.push([thisSheet, thisSheet.ownerNode.getAttribute('cph-ssorder')]);
+	}
+	sheets.sort(function (a, b) {
+		 return a[1] - b[1];
+	});
+	console.log('after sort');
+	console.log(sheets);
+
+	// Mapping between tag names and css default values lookup tables. This allows to exclude default values in the result.
+	var defaultStylesByTagName = {};
+	
+	// Styles inherited from style sheets will not be rendered for elements with these tag names
+	var noStyleTags = {"BASE":true,"HEAD":true,"HTML":true,"META":true,"NOFRAME":true,"NOSCRIPT":true,"PARAM":true,"SCRIPT":true,"STYLE":true,"TITLE":true};
+
+	// This list determines which css default values lookup tables are precomputed at load time
+	// Lookup tables for other tag names will be automatically built at runtime if needed
+	var tagNames = ["A","ABBR","ADDRESS","AREA","ARTICLE","ASIDE","AUDIO","B","BASE","BDI","BDO","BLOCKQUOTE","BODY","BR","BUTTON","CANVAS","CAPTION","CENTER","CITE","CODE","COL","COLGROUP","COMMAND","DATALIST","DD","DEL","DETAILS","DFN","DIV","DL","DT","EM","EMBED","FIELDSET","FIGCAPTION","FIGURE","FONT","FOOTER","FORM","H1","H2","H3","H4","H5","H6","HEAD","HEADER","HGROUP","HR","HTML","I","IFRAME","IMG","INPUT","INS","KBD","KEYGEN","LABEL","LEGEND","LI","LINK","MAP","MARK","MATH","MENU","META","METER","NAV","NOBR","NOSCRIPT","OBJECT","OL","OPTION","OPTGROUP","OUTPUT","P","PARAM","PRE","PROGRESS","Q","RP","RT","RUBY","S","SAMP","SCRIPT","SECTION","SELECT","SMALL","SOURCE","SPAN","STRONG","STYLE","SUB","SUMMARY","SUP","SVG","TABLE","TBODY","TD","TEXTAREA","TFOOT","TH","THEAD","TIME","TITLE","TR","TRACK","U","UL","VAR","VIDEO","WBR"];
+	
+	return eval('inspect_' + func + '()');
+
+	function inspect_authored() {
+		for (var s in sheets) {
+			var thisSheet = sheets[s][0],
+				 rules = thisSheet.cssRules;
+			if (rules && !isPrintOnlyStylesheet(thisSheet.media)) {
+				for (var r in rules) {
+					try {
+						if (rules[r].selectorText)
+							findFirstMatch($el, rules[r]);
+					}
+					catch(err) {}
 				}
-				catch(err) {}
 			}
+		}
+		
+		return prepareAuthoredResults();
+	}
+
+	function inspect_authored_trim_selectors() {
+		for (var s in sheets) {
+			var thisSheet = sheets[s][0],
+				 rules = thisSheet.cssRules;
+			if (rules && !isPrintOnlyStylesheet(thisSheet.media)) {
+				for (var r in rules) {
+					try {
+						if (rules[r].selectorText && findFirstMatchGivenSelector($el, rules[r].selectorText)) {
+							var thisRule = { cssText: rules[r].cssText, selectorText: rules[r].selectorText },
+							    selectors = thisRule.selectorText.split(','),
+							    matchingSelectors = [];
+							for (var l in selectors) {
+								var thisSelector = $.trim(selectors[l]);
+								if (findFirstMatchGivenSelector($el, thisSelector))
+									matchingSelectors.push(thisSelector);
+							}
+							thisRule.selectorText = matchingSelectors.join(', ');
+							thisRule.cssText = thisRule.cssText.replace(/^.*?{(.*?)}/, thisRule.selectorText + ' { \$1 }');
+							rulesUsed.push(thisRule);
+						}
+					}
+					catch(err) {}
+				}
+			}
+		}
+	
+		return prepareAuthoredResults();
+	}
+
+	function inspect_authored_top() {
+		for (var s in sheets) {
+			var thisSheet = sheets[s][0],
+				 rules = thisSheet.cssRules;
+			if (rules && !isPrintOnlyStylesheet(thisSheet.media)) {
+				for (var r in rules) {
+					try {
+						if (rules[r].selectorText && $(rules[r].selectorText).index($el) != -1)
+							rulesUsed.push(rules[r]);
+					}
+					catch(err) {}
+				}
+			}
+		}
+	
+		return prepareAuthoredResults();
+	}
+
+	function inspect_authored_top_trim_selectors() {
+		for (var s in sheets) {
+			var thisSheet = sheets[s][0],
+				 rules = thisSheet.cssRules;
+			if (rules && !isPrintOnlyStylesheet(thisSheet.media)) {
+				for (var r in rules) {
+					try {
+						if (rules[r].selectorText && $(rules[r].selectorText).index($el) != -1) {
+							var thisRule = { cssText: rules[r].cssText, selectorText: rules[r].selectorText },
+							    selectors = thisRule.selectorText.split(','),
+							    matchingSelectors = [];
+							for (var l in selectors) {
+								var thisSelector = $.trim(selectors[l]);
+								if ($(thisSelector).index($el) != -1) {
+									matchingSelectors.push(thisSelector);
+								}
+							}
+							thisRule.selectorText = matchingSelectors.join(', ');
+							thisRule.cssText = thisRule.cssText.replace(/^.*?{(.*?)}/, thisRule.selectorText + ' { \$1 }');
+							rulesUsed.push(thisRule);
+						}
+					}
+					catch(err) {}
+				}
+			}
+		}
+
+		return prepareAuthoredResults();
+	}
+
+	function inspect_computed() {
+		var testDoc = $(doc).find('#cph_styleTests')[0].contentDocument,
+		    testDocBody = testDoc.body;
+	
+		// Precompute the lookup tables.
+		for (var i = 0; i < tagNames.length; i++) {
+			if(!noStyleTags[tagNames[i]])
+				defaultStylesByTagName[tagNames[i]] = computeDefaultStyleByTagName(tagNames[i]);
+		}
+	
+		return serializeIt();
+
+		function computeDefaultStyleByTagName(tagName) {
+			var defaultStyle = {},
+			    element = testDocBody.appendChild(testDoc.createElement(tagName)),
+			    computedStyle = getComputedStyle(element);
+			for (var i = 0; i < computedStyle.length; i++) {
+				defaultStyle[computedStyle[i]] = computedStyle[computedStyle[i]];
+			}
+			testDocBody.removeChild(element);
+			return defaultStyle;
+		}
+
+		function getDefaultStyleByTagName(tagName) {
+			tagName = tagName.toUpperCase();
+			if (!defaultStylesByTagName[tagName])
+				defaultStylesByTagName[tagName] = computeDefaultStyleByTagName(tagName);
+			return defaultStylesByTagName[tagName];
+		}
+	
+		 function serializeIt() {
+			  var cssTexts = [],
+			      elements = el.querySelectorAll('*');
+			  for (var i = 0; i < elements.length; i++) {
+					var e = elements[i];
+					if (!noStyleTags[e.tagName]) {
+						 var computedStyle = getComputedStyle(e),
+						     defaultStyle = getDefaultStyleByTagName(e.tagName);
+						 cssTexts[i] = e.style.cssText;
+						 for (var ii = 0; ii < computedStyle.length; ii++) {
+							  var cssPropName = computedStyle[ii];
+							  if (computedStyle[cssPropName] !== defaultStyle[cssPropName])
+									e.style[cssPropName] = computedStyle[cssPropName];
+						 }
+					}
+			  }
+	
+			var elCssText = el.style.cssText;
+			if (!noStyleTags[el.tagName]) {
+				 var computedStyle = getComputedStyle(el),
+				     defaultStyle = getDefaultStyleByTagName(el.tagName);
+				 for (var ii = 0; ii < computedStyle.length; ii++) {
+					  var cssPropName = computedStyle[ii];
+					  if (computedStyle[cssPropName] !== defaultStyle[cssPropName])
+							el.style[cssPropName] = computedStyle[cssPropName];
+				 }
+			}
+
+			var result = el.outerHTML;
+			for (var i = 0; i < elements.length; i++ ) {
+				elements[i].style.cssText = cssTexts[i];
+			}
+			el.style.cssText = elCssText;
+			return result;
 		}
 	}
 
-	var style = rulesUsed.map(function (cssRule) {
-		var cssText = cssRule.cssText;
-		return cssText.replace(/(\{|;)\s+/g, '\$1\n   ').replace(/\s+}/, '\n}'); // some beautifying of css
-	}).join('\n');
-	
-	return '<style type="text/css">\n' + style + '\n' + '</style>\n\n' + html;
-	
+	function inspect_complete() {
+		var cssTexts = [],
+		    elements = el.querySelectorAll('*');
+		for (var i = 0; i < elements.length; i++) {
+			var e = elements[i];
+			if (!noStyleTags[e.tagName]) {
+				 var computedStyle = getComputedStyle(e);
+				 cssTexts[i] = e.style.cssText;
+				 for (var ii = 0; ii < computedStyle.length; ii++) {
+					  var cssPropName = computedStyle[ii];
+							e.style[cssPropName] = computedStyle[cssPropName];
+				 }
+			}
+		}
+
+		var elCssText = el.style.cssText;
+		if (!noStyleTags[el.tagName]) {
+			var computedStyle = getComputedStyle(el);
+			for (var ii = 0; ii < computedStyle.length; ii++) {
+				var cssPropName = computedStyle[ii];
+					el.style[cssPropName] = computedStyle[cssPropName];
+			}
+		}
+
+		var result = el.outerHTML;
+		for (var i = 0; i < elements.length; i++) {
+			elements[i].style.cssText = cssTexts[i];
+		}
+		el.style.cssText = elCssText;
+
+		return result;
+	}
+
+	function prepareAuthoredResults() {
+		var style = rulesUsed.map(function (cssRule) {
+			var cssText = cssRule.cssText;
+			return cssText.replace(/(\{|;)\s+/g, '\$1\n   ').replace(/\s+}/, '\n}');
+		}).join('\n');
+
+		return '<style type="text/css">\n' +
+				 '/\* styles for inspected element and children *\/\n' +
+				 style + '\n\n' +
+				 '/\* styles for inspected element\'s parent (to facilitate inherited styles) *\/\n' +
+				 '#inspected_parent {\n' +
+				 getInheritableStyles($el.parent()[0]) +
+				 '}\n' +
+				 '</style>\n\n\n' +
+				 '<div id="inspected_parent">\n\n' +
+				 html +
+				 '\n\n</div>';
+	}
+
+	function getInheritableStyles(el) {
+		if (el === undefined || el.nodeType !== Node.ELEMENT_NODE || noStyleTags[el.tagName])
+			return '';
+
+		var cssText = '',
+		    inheritedProps = { 'border-collapse': true, 'border-spacing': true, 'caption-side': true, 'color': true, 'cursor': true, 'direction': true, 'empty-cells': true, 'font-family': true, 'font-size': true, 'font-style': true, 'font-variant': true, 'font-weight': true, 'font': true, 'letter-spacing': true, 'line-height': true, 'list-style-image': true, 'list-style-position': true, 'list-style-type': true, 'list-style': true, 'orphans': true, 'quotes': true, 'text-align': true, 'text-indent': true, 'text-transform': true, 'visibility': true, 'white-space': true, 'widows': true, 'word-spacing': true },
+		    computedStyle = getComputedStyle(el);
+		for (var ii = 0; ii < computedStyle.length; ii++) {
+			var cssPropName = computedStyle[ii];
+			if (inheritedProps[cssPropName])
+				cssText += '   ' + cssPropName + ': ' + computedStyle[cssPropName] + ';\n';
+		}
+
+		return cssText;
+	}
+
 	function findFirstMatch($elm, checkRule) {
 		try {
 			if ($(checkRule.selectorText).index($elm) != -1) {
@@ -130,69 +345,12 @@ function inspect_authored(el) {
 		return childMatched;
 	}
 
-	function isPrintOnlyStylesheet(mediaList) {
-		var isPrint = false;
-		if (mediaList.length) {
-			for (var m = 0; m < mediaList.length; m++) {
-				if (mediaList[m] == 'screen')
-					return false;
-				else if (mediaList[m] == 'print')
-					isPrint = true;
-			}
-		}
-		return isPrint;
-	}
-}
-
-
-function inspect_authored_trim_selectors(el) {
-    if (el === undefined)
-        return;
-    
-	var doc = el.ownerDocument,
-		$ = doc.defaultView.$,
-		$el = $(el),
-		html = $el[0].outerHTML,
-		rulesUsed = [],
-		sheets = doc.styleSheets;
-
-	for (var s in sheets) {
-		var rules = sheets[s].rules || sheets[s].cssRules;
-		if (rules && !isPrintOnlyStylesheet(sheets[s].media)) {
-			for (var r in rules) {
-				try {
-					if (rules[r].selectorText && findFirstMatch($el, rules[r].selectorText)) {
-						var thisRule = { cssText: rules[r].cssText, selectorText: rules[r].selectorText };
-						var selectors = thisRule.selectorText.split(',');
-						var matchingSelectors = [];
-						for (var l in selectors) {
-							var thisSelector = $.trim(selectors[l]);
-							if (findFirstMatch($el, thisSelector))
-								matchingSelectors.push(thisSelector);
-						}
-						thisRule.selectorText = matchingSelectors.join(', ');
-						thisRule.cssText = thisRule.cssText.replace(/^.*?{(.*?)}/, thisRule.selectorText + ' { \$1 }');
-						rulesUsed.push(thisRule);
-					}
-				}
-				catch(err) {}
-			}
-		}
-	}
-
-	var style = rulesUsed.map(function (cssRule) {
-		var cssText = cssRule.cssText;
-		return cssText.replace(/(\{|;)\s+/g, '\$1\n   ').replace(/\s+}/, '\n}'); // some beautifying of css
-	}).join('\n');
-	
-	return '<style type="text/css">\n' + style + '\n' + '</style>\n\n' + html;
-	
-	function findFirstMatch($elm, selText) {
+	function findFirstMatchGivenSelector($elm, selText) {
 		if ($(selText).index($elm) != -1)
 			return true;
 		var childMatched = false;
 		$elm.children().each(function () {
-			if (findFirstMatch($(this), selText)) {
+			if (findFirstMatchGivenSelector($(this), selText)) {
 				childMatched = true;
 				return false; // break .each() loop
 			}
@@ -212,256 +370,6 @@ function inspect_authored_trim_selectors(el) {
 		}
 		return isPrint;
 	}
-}
-
-
-function inspect_authored_top(el) {
-    if (el === undefined)
-        return;
-    
-	var doc = el.ownerDocument,
-		$ = doc.defaultView.$,
-		$el = $(el),
-		html = $el[0].outerHTML,
-		rulesUsed = [],
-		sheets = doc.styleSheets;
-
-	for (var s in sheets) {
-		var rules = sheets[s].rules || sheets[s].cssRules;
-		if (rules && !isPrintOnlyStylesheet(sheets[s].media)) {
-			for (var r in rules) {
-				try {
-					if (rules[r].selectorText && $(rules[r].selectorText).index($el) != -1)
-						rulesUsed.push(rules[r]);
-//						if (rules[r].selectorText && $el.is(rules[r].selectorText))
-//							rulesUsed.push(rules[r]);
-				}
-				catch(err) {}
-			}
-		}
-	}
-
-	var style = rulesUsed.map(function (cssRule) {
-		var cssText = cssRule.cssText;
-		return cssText.replace(/(\{|;)\s+/g, '\$1\n   ').replace(/\s+}/, '\n}'); // some beautifying of css
-	}).join('\n');
-	
-	return '<style type="text/css">\n' + style + '\n' + '</style>\n\n' + html;
-
-	function isPrintOnlyStylesheet(mediaList) {
-		var isPrint = false;
-		if (mediaList.length) {
-			for (var m = 0; m < mediaList.length; m++) {
-				if (mediaList[m] == 'screen')
-					return false;
-				else if (mediaList[m] == 'print')
-					isPrint = true;
-			}
-		}
-		return isPrint;
-	}
-}
-
-
-
-function inspect_authored_top_trim_selectors(el) {
-    if (el === undefined)
-        return;
-    
-	var doc = el.ownerDocument,
-		$ = doc.defaultView.$,
-		$el = $(el),
-		html = $el[0].outerHTML,
-		rulesUsed = [],
-		sheets = doc.styleSheets;
-
-	for (var s in sheets) {
-		var rules = sheets[s].rules || sheets[s].cssRules;
-		if (rules && !isPrintOnlyStylesheet(sheets[s].media)) {
-			for (var r in rules) {
-				try {
-					if (rules[r].selectorText && $(rules[r].selectorText).index($el) != -1) {
-						var thisRule = { cssText: rules[r].cssText, selectorText: rules[r].selectorText };
-						var selectors = thisRule.selectorText.split(',');
-						var matchingSelectors = [];
-						for (var l in selectors) {
-							var thisSelector = $.trim(selectors[l]);
-							if ($(thisSelector).index($el) != -1) {
-								matchingSelectors.push(thisSelector);
-							}
-						}
-						thisRule.selectorText = matchingSelectors.join(', ');
-						thisRule.cssText = thisRule.cssText.replace(/^.*?{(.*?)}/, thisRule.selectorText + ' { \$1 }');
-						rulesUsed.push(thisRule);
-					}
-				}
-				catch(err) {}
-			}
-		}
-	}
-
-	var style = rulesUsed.map(function (cssRule) {
-		var cssText = cssRule.cssText;
-		return cssText.replace(/(\{|;)\s+/g, '\$1\n   ').replace(/\s+}/, '\n}'); // some beautifying of css
-	}).join('\n');
-	
-	return '<style type="text/css">\n' + style + '\n' + '</style>\n\n' + html;
-	
-	function isPrintOnlyStylesheet(mediaList) {
-		var isPrint = false;
-		if (mediaList.length) {
-			for (var m = 0; m < mediaList.length; m++) {
-				if (mediaList[m] == 'screen')
-					return false;
-				else if (mediaList[m] == 'print')
-					isPrint = true;
-			}
-		}
-		return isPrint;
-	}
-}
-
-
-
-function inspect_computed(el) {
-    if (el === undefined)
-        return;
-    
-	var doc = el.ownerDocument,
-		sheets = doc.styleSheets;
-
-    // Mapping between tag names and css default values lookup tables. This allows to exclude default values in the result.
-    var defaultStylesByTagName = {};
-
-    // Styles inherited from style sheets will not be rendered for elements with these tag names
-    var noStyleTags = {"BASE":true,"HEAD":true,"HTML":true,"META":true,"NOFRAME":true,"NOSCRIPT":true,"PARAM":true,"SCRIPT":true,"STYLE":true,"TITLE":true};
-
-    // This list determines which css default values lookup tables are precomputed at load time
-    // Lookup tables for other tag names will be automatically built at runtime if needed
-    var tagNames = ["A","ABBR","ADDRESS","AREA","ARTICLE","ASIDE","AUDIO","B","BASE","BDI","BDO","BLOCKQUOTE","BODY","BR","BUTTON","CANVAS","CAPTION","CENTER","CITE","CODE","COL","COLGROUP","COMMAND","DATALIST","DD","DEL","DETAILS","DFN","DIV","DL","DT","EM","EMBED","FIELDSET","FIGCAPTION","FIGURE","FONT","FOOTER","FORM","H1","H2","H3","H4","H5","H6","HEAD","HEADER","HGROUP","HR","HTML","I","IFRAME","IMG","INPUT","INS","KBD","KEYGEN","LABEL","LEGEND","LI","LINK","MAP","MARK","MATH","MENU","META","METER","NAV","NOBR","NOSCRIPT","OBJECT","OL","OPTION","OPTGROUP","OUTPUT","P","PARAM","PRE","PROGRESS","Q","RP","RT","RUBY","S","SAMP","SCRIPT","SECTION","SELECT","SMALL","SOURCE","SPAN","STRONG","STYLE","SUB","SUMMARY","SUP","SVG","TABLE","TBODY","TD","TEXTAREA","TFOOT","TH","THEAD","TIME","TITLE","TR","TRACK","U","UL","VAR","VIDEO","WBR"];
-
-	// turn stylesheets off momentarily so that we can capture the default browser/user agent styles for each tag
-	var sheetsToReenable = [];
-	for (var s in sheets) {
-		if (!sheets[s].disabled) {
-			sheetsToReenable.push(sheets[s]);
-			sheets[s].disabled = true;
-		}
-	}
-
-    // Precompute the lookup tables.
-    for (var i = 0; i < tagNames.length; i++) {
-        if(!noStyleTags[tagNames[i]])
-            defaultStylesByTagName[tagNames[i]] = computeDefaultStyleByTagName(tagNames[i]);
-    }
-
-	// turn stylesheets back on
-	for (var s in sheetsToReenable) {
-		sheetsToReenable[s].disabled = false;
-	}
-
-    return serializeIt();
-
-    function computeDefaultStyleByTagName(tagName) {
-        var defaultStyle = {};
-        var element = doc.body.appendChild(doc.createElement(tagName));
-        var computedStyle = getComputedStyle(element);
-        for (var i = 0; i < computedStyle.length; i++) {
-            defaultStyle[computedStyle[i]] = computedStyle[computedStyle[i]];
-        }
-        doc.body.removeChild(element);
-        return defaultStyle;
-    }
-
-    function getDefaultStyleByTagName(tagName) {
-        tagName = tagName.toUpperCase();
-        if (!defaultStylesByTagName[tagName])
-            defaultStylesByTagName[tagName] = computeDefaultStyleByTagName(tagName);
-        return defaultStylesByTagName[tagName];
-    }
-
-    function serializeIt() {
-        if (el.nodeType !== Node.ELEMENT_NODE) { throw new TypeError(); }
-
-        var cssTexts = [];
-        var elements = el.querySelectorAll('*');
-        for (var i = 0; i < elements.length; i++) {
-            var e = elements[i];
-            if (!noStyleTags[e.tagName]) {
-                var computedStyle = getComputedStyle(e);
-                var defaultStyle = getDefaultStyleByTagName(e.tagName);
-                cssTexts[i] = e.style.cssText;
-                for (var ii = 0; ii < computedStyle.length; ii++) {
-                    var cssPropName = computedStyle[ii];
-                    if (computedStyle[cssPropName] !== defaultStyle[cssPropName])
-                        e.style[cssPropName] = computedStyle[cssPropName];
-                }
-            }
-        }
-
-		var elCssText = el.style.cssText;
-		if (!noStyleTags[el.tagName]) {
-			 var computedStyle = getComputedStyle(el);
-			 var defaultStyle = getDefaultStyleByTagName(el.tagName);
-			 for (var ii = 0; ii < computedStyle.length; ii++) {
-				  var cssPropName = computedStyle[ii];
-				  if (computedStyle[cssPropName] !== defaultStyle[cssPropName])
-						el.style[cssPropName] = computedStyle[cssPropName];
-			 }
-		}
-
-        var result = el.outerHTML;
-        for (var i = 0; i < elements.length; i++ ) {
-            elements[i].style.cssText = cssTexts[i];
-        }
-		el.style.cssText = elCssText;
-        return result;
-    }
-}
-
-
-function inspect_complete(el) {
-    if (el === undefined)
-        return;
-
-    // Styles inherited from style sheets will not be rendered for elements with these tag names
-    var noStyleTags = {"BASE":true,"HEAD":true,"HTML":true,"META":true,"NOFRAME":true,"NOSCRIPT":true,"PARAM":true,"SCRIPT":true,"STYLE":true,"TITLE":true};
-
-    return serializeIt();
-
-    function serializeIt() {
-        if (el.nodeType !== Node.ELEMENT_NODE) { throw new TypeError(); }
-
-        var cssTexts = [];
-        var elements = el.querySelectorAll('*');
-        for (var i = 0; i < elements.length; i++) {
-            var e = elements[i];
-            if (!noStyleTags[e.tagName]) {
-                var computedStyle = getComputedStyle(e);
-                cssTexts[i] = e.style.cssText;
-                for (var ii = 0; ii < computedStyle.length; ii++) {
-                    var cssPropName = computedStyle[ii];
-                        e.style[cssPropName] = computedStyle[cssPropName];
-                }
-            }
-        }
-
-		var elCssText = el.style.cssText;
-		if (!noStyleTags[el.tagName]) {
-			 var computedStyle = getComputedStyle(el);
-			 for (var ii = 0; ii < computedStyle.length; ii++) {
-				  var cssPropName = computedStyle[ii];
-						el.style[cssPropName] = computedStyle[cssPropName];
-			 }
-		}
-
-        var result = el.outerHTML;
-        for (var i = 0; i < elements.length; i++) {
-            elements[i].style.cssText = cssTexts[i];
-        }
-		el.style.cssText = elCssText;
-        return result;
-    }
 }
 
 
@@ -997,4 +905,3 @@ function style_html(html_source, options) {
   }
   return multi_parser.output.join('');
 }
-
