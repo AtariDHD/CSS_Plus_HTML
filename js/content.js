@@ -1,9 +1,19 @@
 $(function() {
-	// inject jQuery into the background content page so that it is available to sidebar.js
+	var jqLoaderCode =
+		"if (typeof jQuery === 'undefined') {\n" +
+		"    var jqscript = document.createElement('script');\n" +
+		"    jqscript.type = 'text/javascript';\n" +
+		"    jqscript.src = '//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js';\n" +
+		"    var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;\n" +
+		"    head.insertBefore(jqscript, head.firstChild);\n" +
+		"}\n";
+
 	var script = document.createElement('script');
-	//    script.src = 'http' + (/^https/.test(location.protocol) ? 's' : '') + '://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js';
-	script.src = '//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js';
-	document.getElementsByTagName('head')[0].appendChild(script);
+	script.type = 'text/javascript';
+	script.async = true;
+	script.appendChild(document.createTextNode(jqLoaderCode));
+	var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+	head.insertBefore(script, head.firstChild);
 
 	$('BODY').append('<iframe id="cph_xorcss" style="display: none;" />'); // we'll keep track of our injected stylesheets by putting them into this hidden iframe, where they can't interfere
 	$('BODY').append('<iframe id="cph_styleTests" style="display: none;" />'); // we'll use this iframe to test elements for their default styles

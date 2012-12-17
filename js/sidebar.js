@@ -61,7 +61,7 @@ function inspect(el, func) {
 		return;
 
 	var doc = el.ownerDocument,
-		 $ = doc.defaultView.$,
+		 $ = doc.defaultView.jQuery,
 		 $el = $(el),
 		 html = $el[0].outerHTML,
 		 rulesUsed = [],
@@ -82,8 +82,6 @@ function inspect(el, func) {
 	sheets.sort(function (a, b) {
 		 return a[1] - b[1];
 	});
-	console.log('after sort');
-	console.log(sheets);
 
 	// Mapping between tag names and css default values lookup tables. This allows to exclude default values in the result.
 	var defaultStylesByTagName = {};

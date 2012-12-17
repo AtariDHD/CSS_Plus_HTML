@@ -1,7 +1,7 @@
 {
   "name": "CSS+HTML",
   "description": "Capture styles and markup for element plus children.",
-  "version": "0.41",
+  "version": "0.42",
   "manifest_version": 2,
   "minimum_chrome_version": "18.0",
     "permissions": [
