@@ -190,11 +190,40 @@ function inspect(el, func) {
 		return prepareAuthoredResults();
 	}
 
+	function inspect_computed_author_styles() {
+		for (var s in sheets) {
+			var thisSheet = sheets[s][0],
+				 rules = thisSheet.cssRules;
+			if (rules && !isPrintOnlyStylesheet(thisSheet.media)) {
+				for (var r in rules) {
+					try {
+						if (rules[r].selectorText && $(rules[r].selectorText).index($el) != -1) {
+							var thisRule = { cssText: rules[r].cssText, selectorText: rules[r].selectorText },
+							    selectors = thisRule.selectorText.split(','),
+							    matchingSelectors = [];
+							for (var l in selectors) {
+								var thisSelector = $.trim(selectors[l]);
+								if ($(thisSelector).index($el) != -1) {
+									matchingSelectors.push(thisSelector);
+								}
+							}
+							thisRule.selectorText = matchingSelectors.join(', ');
+							thisRule.cssText = thisRule.cssText.replace(/^.*?{(.*?)}/, thisRule.selectorText + ' { \$1 }');
+							rulesUsed.push(thisRule);
+						}
+					}
+					catch(err) {}
+				}
+			}
+		}
+
+		return prepareAuthoredResults();
+	}
+
 	function inspect_computed() {
 		var testDoc = $(doc).find('#cph_styleTests')[0].contentDocument,
 		    testDocBody = testDoc.body;
 	
-		// Precompute the lookup tables.
 		for (var i = 0; i < tagNames.length; i++) {
 			if(!noStyleTags[tagNames[i]])
 				defaultStylesByTagName[tagNames[i]] = computeDefaultStyleByTagName(tagNames[i]);
