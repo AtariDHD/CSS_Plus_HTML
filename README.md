@@ -62,6 +62,7 @@ Future Plans
 
 Changelog
 ---------
++ v0.44: improved performance and minimized the number of inherited styles returned
 + v0.43: fixed support for local files
 + v0.42: fixed jquery conflict that would cause pages to malfunction
 + v0.41: added support for inherited styles to author styles
