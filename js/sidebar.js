@@ -60,14 +60,252 @@ function inspect(el, func) {
 	if (el === undefined || el.nodeType !== Node.ELEMENT_NODE)
 		return;
 
+
+	/**
+	 * Calculates the specificity of CSS selectors
+	 * https://github.com/keeganstreet/specificity
+	 *
+	 * Returns an array of objects with the following properties:
+	 *  - selector: the input
+	 *  - specificity: e.g. 0,1,0,0
+	 *  - parts: array with details about each part of the selector that counts towards the specificity
+	 *
+	 * Examples:
+	 * SPECIFICITY.calculate('ul#nav li.active a');   // returns [{ specificity: '0,1,1,3' }]
+	 * SPECIFICITY.calculate('ul#nav li.active a, body.ie7 .col_3 h2 ~ h2');   // [{ specificity: '0,1,1,3' }, { specificity: '0,0,2,3' }]
+	 *
+	 * Modified by Corey Meredith to return the highest specificity score for the given selectors
+	 * SPECIFICITY.calculateHighestScore('ul#nav li.active a, body.ie7 .col_3 h2 ~ h2');
+	 */
+	var SPECIFICITY = (function() {
+		var calculate,
+			calculateSingle;
+
+		function calculateHighestScore(input) {
+			var highestScore = 0,
+				 thisScore,
+				 scores = calculate(input);
+			for (var s in scores) {
+				thisScore = specificityToInteger(scores[s].specificity);
+				if (thisScore > highestScore)
+					highestScore = thisScore;
+			}
+			return highestScore;
+		}
+		
+		function specificityToInteger(specificityString) {
+			var specificityArray = specificityString.split(','),
+				 hexString = '';
+			for (var s in specificityArray) {
+				hexString += decimalToHex(parseInt(specificityArray[s]));
+			}
+			return parseInt(hexString, 16);
+		}
+
+		function decimalToHex(d) {
+			var hex = Number(d).toString(16);
+			hex = '00'.substr(0, 2 - hex.length) + hex; 
+			return hex;
+		}
+
+		calculate = function(input) {
+			var selectors,
+				selector,
+				i,
+				len,
+				results = [];
+
+			// Separate input by commas
+			selectors = input.split(',');
+
+			for (i = 0, len = selectors.length; i < len; i += 1) {
+				selector = selectors[i];
+				if (selector.length > 0) {
+					results.push(calculateSingle(selector));
+				}
+			}
+
+			return results;
+		};
+
+		// Calculate the specificity for a selector by dividing it into simple selectors and counting them
+		calculateSingle = function(input) {
+			var selector = input,
+				findMatch,
+				typeCount = {
+					'a': 0,
+					'b': 0,
+					'c': 0
+				},
+				parts = [],
+				// The following regular expressions assume that selectors matching the preceding regular expressions have been removed
+				attributeRegex = /(\[[^\]]+\])/g,
+				idRegex = /(#[^\s\+>~\.\[:]+)/g,
+				classRegex = /(\.[^\s\+>~\.\[:]+)/g,
+				pseudoElementRegex = /(::[^\s\+>~\.\[:]+|:first-line|:first-letter|:before|:after)/g,
+				pseudoClassRegex = /(:[^\s\+>~\.\[:]+)/g,
+				elementRegex = /([^\s\+>~\.\[:]+)/g;
+
+			// Find matches for a regular expression in a string and push their details to parts
+			// Type is "a" for IDs, "b" for classes, attributes and pseudo-classes and "c" for elements and pseudo-elements
+			findMatch = function(regex, type) {
+				var matches, i, len, match, index, length;
+				if (regex.test(selector)) {
+					matches = selector.match(regex);
+					for (i = 0, len = matches.length; i < len; i += 1) {
+						typeCount[type] += 1;
+						match = matches[i];
+						index = selector.indexOf(match);
+						length = match.length;
+						parts.push({
+							selector: match,
+							type: type,
+							index: index,
+							length: length
+						});
+						// Replace this simple selector with whitespace so it won't be counted in further simple selectors
+						selector = selector.replace(match, Array(length + 1).join(' '));
+					}
+				}
+			};
+
+			// Remove the negation psuedo-class (:not) but leave its argument because specificity is calculated on its argument
+			(function() {
+				var regex = /:not\(([^\)]*)\)/g;
+				if (regex.test(selector)) {
+					selector = selector.replace(regex, '     $1 ');
+				}
+			}());
+
+			// Remove anything after a left brace in case a user has pasted in a rule, not just a selector
+			(function() {
+				var regex = /{[^]*/gm,
+					matches, i, len, match;
+				if (regex.test(selector)) {
+					matches = selector.match(regex);
+					for (i = 0, len = matches.length; i < len; i += 1) {
+						match = matches[i];
+						selector = selector.replace(match, Array(match.length + 1).join(' '));
+					}
+				}
+			}());
+
+			// Add attribute selectors to parts collection (type b)
+			findMatch(attributeRegex, 'b');
+
+			// Add ID selectors to parts collection (type a)
+			findMatch(idRegex, 'a');
+
+			// Add class selectors to parts collection (type b)
+			findMatch(classRegex, 'b');
+
+			// Add pseudo-element selectors to parts collection (type c)
+			findMatch(pseudoElementRegex, 'c');
+
+			// Add pseudo-class selectors to parts collection (type b)
+			findMatch(pseudoClassRegex, 'b');
+
+			// Remove universal selector and separator characters
+			selector = selector.replace(/[\*\s\+>~]/g, ' ');
+
+			// Remove any stray dots or hashes which aren't attached to words
+			// These may be present if the user is live-editing this selector
+			selector = selector.replace(/[#\.]/g, ' ');
+
+			// The only things left should be element selectors (type c)
+			findMatch(elementRegex, 'c');
+
+			// Order the parts in the order they appear in the original selector
+			// This is neater for external apps to deal with
+			parts.sort(function(a, b) {
+				return a.index - b.index;
+			});
+
+			return {
+				selector: input,
+				specificity: '0,' + typeCount.a.toString() + ',' + typeCount.b.toString() + ',' + typeCount.c.toString(),
+				parts: parts
+			};
+		};
+
+		return {
+			calculate: calculate,
+			calculateHighestScore : calculateHighestScore
+		};
+	}());
+
+
 	var doc = el.ownerDocument,
-		 $ = doc.defaultView.jQuery,
-		 $el = $(el),
-		 html = $el[0].outerHTML,
-		 rulesUsed = [],
-		 sheets = [],
-		 docSheets = doc.styleSheets,
-		 xorSheets = $('#cph_xorcss')[0].contentDocument.styleSheets;
+		$ = doc.defaultView.jQuery,
+		$el = $(el),
+		elCphId = 0,
+		html = $el[0].outerHTML,
+		rulesUsed = [],
+		sheets = [],
+		docSheets = doc.styleSheets,
+		xorSheets = $('#cph_xorcss')[0].contentDocument.styleSheets,
+		fragCssText = '',
+		propValues = [], // propValues["font-weight"] = {value: 'bold', score: 0};
+		inheritableProperties = [
+			'border-collapse',
+			'border-spacing',
+			'caption-side',
+			'color',
+			'cursor',
+			'direction',
+			'empty-cells',
+			'font-family',
+			'font-size',
+			'font-style',
+			'font-variant',
+			'font-weight',
+			'font',
+			'letter-spacing',
+			'line-height',
+			'list-style-image',
+			'list-style-position',
+			'list-style-type',
+			'list-style',
+			'orphans',
+			'quotes',
+			'text-align',
+			'text-indent',
+			'text-transform',
+			'visibility',
+			'white-space',
+			'widows',
+			'word-spacing'
+		];
+		cssLonghandToShorthand = {
+			'border-collapse': '',
+			'border-spacing': '',
+			'caption-side': '',
+			'color': '',
+			'cursor': '',
+			'direction': '',
+			'empty-cells': '',
+			'font-family': 'font',
+			'font-size': 'font',
+			'font-style': 'font',
+			'font-variant': 'font',
+			'font-weight': 'font',
+			'font': '',
+			'letter-spacing': '',
+			'line-height': 'font',
+			'list-style-image': 'list-style',
+			'list-style-position': 'list-style',
+			'list-style-type': 'list-style',
+			'list-style': '',
+			'orphans': '',
+			'quotes': '',
+			'text-align': '',
+			'text-indent': '',
+			'text-transform': '',
+			'visibility': '',
+			'white-space': '',
+			'widows': '',
+			'word-spacing': ''
+		};
 
 	for (var s in docSheets) {
 		var thisSheet = docSheets[s];
@@ -149,7 +387,7 @@ function inspect(el, func) {
 			if (rules && !isPrintOnlyStylesheet(thisSheet.media)) {
 				for (var r in rules) {
 					try {
-						if (rules[r].selectorText && $(rules[r].selectorText).index($el) != -1)
+						if (rules[r].selectorText && $el.is(rules[r].selectorText))
 							rulesUsed.push(rules[r]);
 					}
 					catch(err) {}
@@ -167,15 +405,14 @@ function inspect(el, func) {
 			if (rules && !isPrintOnlyStylesheet(thisSheet.media)) {
 				for (var r in rules) {
 					try {
-						if (rules[r].selectorText && $(rules[r].selectorText).index($el) != -1) {
+						if (rules[r].selectorText && $el.is(rules[r].selectorText)) {
 							var thisRule = { cssText: rules[r].cssText, selectorText: rules[r].selectorText },
 							    selectors = thisRule.selectorText.split(','),
 							    matchingSelectors = [];
 							for (var l in selectors) {
 								var thisSelector = $.trim(selectors[l]);
-								if ($(thisSelector).index($el) != -1) {
+								if ($el.is(thisSelector))
 									matchingSelectors.push(thisSelector);
-								}
 							}
 							thisRule.selectorText = matchingSelectors.join(', ');
 							thisRule.cssText = thisRule.cssText.replace(/^.*?{(.*?)}/, thisRule.selectorText + ' { \$1 }');
@@ -197,15 +434,14 @@ function inspect(el, func) {
 			if (rules && !isPrintOnlyStylesheet(thisSheet.media)) {
 				for (var r in rules) {
 					try {
-						if (rules[r].selectorText && $(rules[r].selectorText).index($el) != -1) {
-							var thisRule = { cssText: rules[r].cssText, selectorText: rules[r].selectorText },
+						if (rules[r].selectorText && findFirstMatchGivenSelector($el, rules[r].selectorText)) {
+							var thisRule = { cssText: rules[r].cssText, selectorText: rules[r].selectorText, style: rules[r].style },
 							    selectors = thisRule.selectorText.split(','),
 							    matchingSelectors = [];
 							for (var l in selectors) {
 								var thisSelector = $.trim(selectors[l]);
-								if ($(thisSelector).index($el) != -1) {
+								if (findFirstMatchGivenSelector($el, thisSelector))
 									matchingSelectors.push(thisSelector);
-								}
 							}
 							thisRule.selectorText = matchingSelectors.join(', ');
 							thisRule.cssText = thisRule.cssText.replace(/^.*?{(.*?)}/, thisRule.selectorText + ' { \$1 }');
@@ -217,7 +453,142 @@ function inspect(el, func) {
 			}
 		}
 
-		return prepareAuthoredResults();
+// is browser matchesSelector() faster than jquery is() ??
+
+		var $computedEl = computeAuthorStyles($el.clone());
+
+		return '<style type="text/css">\n' +
+			'/\* styles for inspected element and children *\/\n' +
+			fragCssText + '\n\n' +
+			'/\* styles for inspected element\'s parent (to facilitate inherited styles) *\/\n' +
+			'#inspected_parent {\n' +
+			getComputedAuthorInheritableStyles($el) +
+			'}\n' +
+			'</style>\n\r\n' +
+			'<div id="inspected_parent">\n\r\n' +
+			$computedEl[0].outerHTML +
+			'\n\n</div>';
+	}
+
+	function computeAuthorStyles($elm) {
+		var elmPropValues = [];
+
+		for (var r in rulesUsed) {
+			var thisRule = rulesUsed[r],
+			    selectors = thisRule.selectorText.split(','),
+			    matchingSelectors = [];
+			for (var l in selectors) {
+				var thisSelector = $.trim(selectors[l]);
+				if ($elm.is(thisSelector))
+					matchingSelectors.push(thisSelector);
+			}
+			var thisRuleSelText = matchingSelectors.join(', ');
+
+			if (thisRuleSelText.length) {
+				var ruleStyles = processStyles(thisRule.style, SPECIFICITY.calculateHighestScore(thisRuleSelText));
+				elmPropValues = applyLatestStyle(elmPropValues, ruleStyles);
+			}
+		}
+
+		elmPropValues = applyLatestStyle(elmPropValues, processStyles($elm[0].style, 0x1000000));
+
+
+		// TODO: figure out how to sort elmPropValues ... start with elmPropValues.sort() ... would like properties sorted alphabetically when possible ... long-hand properties must come after shorthand though
+
+		/*
+		// use inline styles for results
+		$elm.removeAttr('style');
+		for (p in elmPropValues) {
+			$elm.css(p, elmPropValues[p].value);
+		}
+		*/
+
+
+		// or use stylesheet with custom ids for each element
+		$elm.removeAttr('style');
+		var cssText = '';
+		for (p in elmPropValues) {
+			cssText += '   ' + p + ': ' + elmPropValues[p].value + ';\n';
+		}
+		if (cssText.length) {
+			elCphId++;
+			fragCssText += '[cph-id="' + elCphId + '"] {\n' + cssText + '}\n';
+			$elm.attr('cph-id', elCphId);
+		}
+
+		$elm.children().each(function () {
+			computeAuthorStyles($(this));
+		});
+
+		return $elm;
+	}
+
+
+	function applyLatestStyle(existing, latest) {
+		for (var l in latest) {
+			var thisNewStyle = latest[l];
+
+			if (typeof existing[l] == 'undefined') {
+				if (!(typeof cssLonghandToShorthand[l] != 'undefined' && cssLonghandToShorthand[l].length && typeof existing[cssLonghandToShorthand[l]] != 'undefined' && existing[cssLonghandToShorthand[l]].score > thisNewStyle.score)) { // make sure there isn't a more specific shorthand version already declared
+					existing[l] = {
+						value: thisNewStyle.value,
+						score: thisNewStyle.score
+					};
+				}
+			}
+			else if (existing[l].score <= thisNewStyle.score) {
+				existing[l] = {
+					value: thisNewStyle.value,
+					score: thisNewStyle.score
+				};
+			}
+			for (var c in thisNewStyle.clear) {
+				if (typeof existing[c] != 'undefined' && existing[c].score <= thisNewStyle.score)
+					delete existing[c];
+			}
+		}
+
+		return existing;
+	}
+
+	function processStyles(styleDeclaration, startingSpecificityScore) {
+		var props = styleDeclaration,
+			pkg = [];
+
+		for (var p = 0; p < props.length; p++) {
+			var thisProp = props[p],
+				thisPropSh = props.getPropertyShorthand(thisProp);
+			if (thisPropSh) {
+				if (!pkg[thisPropSh]) {
+					pkg[thisPropSh] = {
+						value: props.getPropertyValue(thisPropSh),
+						score: calculatePriorityScore(startingSpecificityScore, props.getPropertyPriority(thisPropSh)),
+						clear: []
+					};
+				}
+				pkg[thisPropSh].clear.push(thisProp);
+			}
+			else {
+				pkg[thisProp] = {
+					value: props.getPropertyValue(thisProp),
+					score: calculatePriorityScore(startingSpecificityScore, props.getPropertyPriority(thisProp)),
+					clear: []
+				};
+			}
+		}
+
+		return pkg;
+	}
+
+	function calculatePriorityScore(startingSpecificityScore, isImportant) {
+		if (isImportant == 'important')
+			return startingSpecificityScore + 0x100000000;
+		else
+			return startingSpecificityScore;
+	}
+
+	function isInheritableProperty(checkProp) {
+		return inheritableProperties.indexOf(checkProp) != -1;
 	}
 
 	function inspect_computed() {
@@ -330,7 +701,7 @@ function inspect(el, func) {
 				 style + '\n\n' +
 				 '/\* styles for inspected element\'s parent (to facilitate inherited styles) *\/\n' +
 				 '#inspected_parent {\n' +
-				 getInheritableStyles($el.parent()[0]) +
+				 getComputedAuthorInheritableStyles($el) +
 				 '}\n' +
 				 '</style>\n\n\n' +
 				 '<div id="inspected_parent">\n\n' +
@@ -338,17 +709,63 @@ function inspect(el, func) {
 				 '\n\n</div>';
 	}
 
-	function getInheritableStyles(el) {
-		if (el === undefined || el.nodeType !== Node.ELEMENT_NODE || noStyleTags[el.tagName])
-			return '';
+	// DEPRECATED - use getComputedAuthorInheritableStyles instead
+	function getInheritableStyles($elm) {
+//		if (el === undefined || el.nodeType !== Node.ELEMENT_NODE || noStyleTags[el.tagName])
+//			return '';
 
 		var cssText = '',
-		    inheritedProps = { 'border-collapse': true, 'border-spacing': true, 'caption-side': true, 'color': true, 'cursor': true, 'direction': true, 'empty-cells': true, 'font-family': true, 'font-size': true, 'font-style': true, 'font-variant': true, 'font-weight': true, 'font': true, 'letter-spacing': true, 'line-height': true, 'list-style-image': true, 'list-style-position': true, 'list-style-type': true, 'list-style': true, 'orphans': true, 'quotes': true, 'text-align': true, 'text-indent': true, 'text-transform': true, 'visibility': true, 'white-space': true, 'widows': true, 'word-spacing': true },
-		    computedStyle = getComputedStyle(el);
+		    computedStyle = getComputedStyle($elm.parent()[0]);
 		for (var ii = 0; ii < computedStyle.length; ii++) {
 			var cssPropName = computedStyle[ii];
-			if (inheritedProps[cssPropName])
+			if (isInheritableProperty(cssPropName))
 				cssText += '   ' + cssPropName + ': ' + computedStyle[cssPropName] + ';\n';
+		}
+
+		return cssText;
+	}
+
+	function getComputedAuthorInheritableStyles($elm) {
+		var declaredInheritedProps = [],
+			inheritedPropValues = [],
+			cssText = '',
+			computedStyle = getComputedStyle($elm.parent()[0]);
+
+		$($elm.parents().get().reverse()).each(function() {
+			for (var s in sheets) {
+				var thisSheet = sheets[s][0],
+					rules = thisSheet.cssRules;
+				if (rules && !isPrintOnlyStylesheet(thisSheet.media)) {
+					for (var r in rules) {
+						var thisRule = rules[r];
+						if ($(this).is(thisRule.selectorText)) {
+							checkStyleForInheritableProperties(thisRule.style);
+						}
+					}
+				}
+			}
+			checkStyleForInheritableProperties($(this)[0].style);
+		});
+
+		function checkStyleForInheritableProperties(theStyle) {
+			for (var p = 0; p < theStyle.length; p++) {
+				var thisProp = theStyle[p];
+				if (isInheritableProperty(thisProp) && declaredInheritedProps.indexOf(thisProp) == -1)
+					declaredInheritedProps.push(thisProp);
+			}
+		}
+
+		for (var d in declaredInheritedProps) {
+			var thisProp = declaredInheritedProps[d],
+				thisPropSh = cssLonghandToShorthand[thisProp];
+			if (thisPropSh.length && computedStyle[thisPropSh].length)
+				inheritedPropValues[thisPropSh] = computedStyle[thisPropSh];
+			else if (computedStyle[thisProp].length)
+				inheritedPropValues[thisProp] = computedStyle[thisProp];
+		}
+
+		for (var cssPropName in inheritedPropValues) {
+			cssText += '   ' + cssPropName + ': ' + inheritedPropValues[cssPropName] + ';\n';
 		}
 
 		return cssText;
@@ -356,7 +773,7 @@ function inspect(el, func) {
 
 	function findFirstMatch($elm, checkRule) {
 		try {
-			if ($(checkRule.selectorText).index($elm) != -1) {
+			if ($elm.is(checkRule.selectorText)) {
 				rulesUsed.push(checkRule);
 				return true;
 			}
@@ -373,7 +790,7 @@ function inspect(el, func) {
 	}
 
 	function findFirstMatchGivenSelector($elm, selText) {
-		if ($(selText).index($elm) != -1)
+		if ($elm.is(selText))
 			return true;
 		var childMatched = false;
 		$elm.children().each(function () {
@@ -400,9 +817,9 @@ function inspect(el, func) {
 }
 
 
-/*
 
- Style HTML
+/*
+Style HTML
 ---------------
 
   Written by Nochum Sossonko, (nsossonko@hotmail.com)
